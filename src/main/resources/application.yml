@@ -13,16 +13,19 @@
 #server.port=7475
 
 spring:
-application:
-name: UberBookingService
-datasource:
-url: jdbc:mysql://localhost:3306/Uber_Db_Local
-username: root
-password: ${mysql_password}
-jpa:
-show-sql: true
-hibernate:
-ddl-auto: validate
+  application:
+    name: UberBookingService
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/Uber_Db_Local
+    username: root
+    password: Sahil_201_
+
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: update
 
 server:
-port: 8001
+  port: 8001
+
