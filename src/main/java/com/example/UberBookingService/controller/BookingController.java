@@ -5,6 +5,8 @@ import com.example.UberBookingService.dto.CreateBookingDto;
 import com.example.UberBookingService.dto.CreateBookingResponseDto;
 //import com.example.UberBookingService.dto.UpdateBookingRequestDto;
 //import com.example.UberBookingService.dto.UpdateBookingResponseDto;
+import com.example.UberBookingService.dto.UpdateBookingRequestDto;
+import com.example.UberBookingService.dto.UpdateBookingResponseDto;
 import com.example.UberBookingService.services.BookingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,9 +30,9 @@ public class BookingController {
     }
 
 
-//    @PostMapping("/{bookingId}")
-//    public ResponseEntity<UpdateBookingResponseDto> updateBooking(@RequestBody UpdateBookingRequestDto requestDto, @PathVariable Long bookingId) {
-//        return new ResponseEntity<>(bookingService.updateBooking(requestDto, bookingId), HttpStatus.OK);
-//    }
+    @PostMapping("/{bookingId}")
+    public ResponseEntity<UpdateBookingResponseDto> updateBooking(@RequestBody UpdateBookingRequestDto requestDto, @PathVariable Long bookingId) {
+        return new ResponseEntity<>(bookingService.updateBooking(requestDto, bookingId), HttpStatus.OK);
+    }
 
 }

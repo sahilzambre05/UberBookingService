@@ -1,18 +1,22 @@
 package com.example.UberBookingService.services;
 
-import com.example.UberBookingService.dto.CreateBookingDto;
-import com.example.UberBookingService.dto.CreateBookingResponseDto;
-import com.example.UberBookingService.dto.DriverLocationDto;
-import com.example.UberBookingService.dto.NearbyDriversRequestDto;
+import com.example.UberBookingService.apis.LocationServiceApi;
+import com.example.UberBookingService.apis.UberSocketApi;
+import com.example.UberBookingService.dto.*;
 import com.example.UberBookingService.repositories.BookingRepository;
+import com.example.UberBookingService.repositories.DriverRepository;
 import com.example.UberBookingService.repositories.PassengerRepository;
 import com.example.UberEntityService.models.Booking;
 import com.example.UberEntityService.models.BookingStatus;
+import com.example.UberEntityService.models.Driver;
 import com.example.UberEntityService.models.Passenger;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -25,17 +29,24 @@ public class BookingServiceImpl implements BookingService{
 
     private final RestTemplate restTemplate;
 
-//    private final LocationServiceApi locationServiceApi;
+    private final LocationServiceApi locationServiceApi;
 
-//    private final UberSocketApi uberSocketApi;
-//    private final DriverRepository driverRepository;
+    private final UberSocketApi uberSocketApi;
+    private final DriverRepository driverRepository;
 
-    private static final String LOCATION_SERVICE = "http://localhost:7777";
+//    private static final String LOCATION_SERVICE = "http://localhost:7777";
 
-    public BookingServiceImpl(PassengerRepository passengerRepository, BookingRepository bookingRepository) {
+    public BookingServiceImpl(PassengerRepository passengerRepository,
+                              BookingRepository bookingRepository,
+                              LocationServiceApi locationServiceApi,
+                              UberSocketApi uberSocketApi,
+                              DriverRepository driverRepository) {
         this.passengerRepository = passengerRepository;
         this.bookingRepository = bookingRepository;
         this.restTemplate = new RestTemplate();
+        this.locationServiceApi = locationServiceApi;
+        this.uberSocketApi = uberSocketApi;
+        this.driverRepository = driverRepository;
     }
 
 
@@ -59,14 +70,16 @@ public class BookingServiceImpl implements BookingService{
                 .longitude(bookingDetails.getStartLocation().getLongitude())
                 .build();
 
-        ResponseEntity<DriverLocationDto[]> result = restTemplate.postForEntity(LOCATION_SERVICE + "/api/location/nearby/drivers", request, DriverLocationDto[].class);
-
-        if(result.getStatusCode().is2xxSuccessful() && result.getBody() != null) {
-            List<DriverLocationDto> driverLocations = Arrays.asList(result.getBody());
-            driverLocations.forEach(driverLocationDto -> {
-                System.out.println(driverLocationDto.getDriverId() + " " + "lat: " + driverLocationDto.getLatitude() + "long: " + driverLocationDto.getLongitude());
-            });
-        }
+        processNearbyDriversAsync(request, bookingDetails.getPassengerId(), newBooking.getId());
+//
+//        ResponseEntity<DriverLocationDto[]> result = restTemplate.postForEntity(LOCATION_SERVICE + "/api/location/nearby/drivers", request, DriverLocationDto[].class);
+//
+//        if(result.getStatusCode().is2xxSuccessful() && result.getBody() != null) {
+//            List<DriverLocationDto> driverLocations = Arrays.asList(result.getBody());
+//            driverLocations.forEach(driverLocationDto -> {
+//                System.out.println(driverLocationDto.getDriverId() + " " + "lat: " + driverLocationDto.getLatitude() + "long: " + driverLocationDto.getLongitude());
+//            });
+//        }
 
         return CreateBookingResponseDto.builder()
                 .bookingId(newBooking.getId())
@@ -74,4 +87,80 @@ public class BookingServiceImpl implements BookingService{
                 .build();
     }
 
+    @Override
+    public UpdateBookingResponseDto updateBooking(UpdateBookingRequestDto bookingRequestDto, Long bookingId) {
+//        bookingRepository.fu
+        System.out.println(bookingRequestDto.getDriverId().get());
+        Optional<Driver> driver = driverRepository.findById(bookingRequestDto.getDriverId().get());
+        // TODO : if(driver.isPresent() && driver.get().isAvailable())
+        bookingRepository.updateBookingStatusAndDriverById(bookingId, BookingStatus.SCHEDULED,driver.get());
+        // TODO: driverRepository.update -> make it unavailable
+        Optional<Booking> booking = bookingRepository.findById(bookingId);
+        return UpdateBookingResponseDto.builder()
+                .bookingId(bookingId)
+                .status(booking.get().getBookingStatus())
+                .driver(Optional.ofNullable(booking.get().getDriver()))
+                .build();
+    }
+
+    private void processNearbyDriversAsync(NearbyDriversRequestDto requestDto, Long passengerId, Long bookingId) {
+        Call<DriverLocationDto[]> call = locationServiceApi.getNearbyDrivers(requestDto);
+        System.out.println(call.request().url() + " " + call.request().method() + " " + call.request().headers());
+
+        call.enqueue(new Callback<DriverLocationDto[]>() {
+            @Override
+            public void onResponse(Call<DriverLocationDto[]> call, Response<DriverLocationDto[]> response) {
+//                try {
+//                    Thread.sleep(5000);
+//                } catch (InterruptedException e) {
+//                    throw new RuntimeException(e);
+//                }
+                if(response.isSuccessful() && response.body() != null) {
+                    List<DriverLocationDto> driverLocations = Arrays.asList(response.body());
+                    driverLocations.forEach(driverLocationDto -> {
+                        System.out.println(driverLocationDto.getDriverId() + " " + "lat: " + driverLocationDto.getLatitude() + "long: " + driverLocationDto.getLongitude());
+                    });
+
+                    try {
+                        raiseRideRequestAsync(RideRequestDto.builder().passengerId(passengerId).bookingId(bookingId).build());
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                } else {
+                    System.out.println("Request failed" + response.message());
+                }
+            }
+
+            @Override
+            public void onFailure(Call<DriverLocationDto[]> call, Throwable t) {
+                t.printStackTrace();
+            }
+        });
+    }
+
+    private void raiseRideRequestAsync(RideRequestDto requestDto) throws IOException {
+        Call<Boolean> call = uberSocketApi.raiseRideRequest(requestDto);
+
+        System.out.println(call.request().url() + " " + call.request().method() + " " + call.request().headers());
+        call.enqueue(new Callback<>() {
+            @Override
+            public void onResponse(Call<Boolean> call, Response<Boolean> response) {
+                System.out.println(response.isSuccessful());
+                System.out.println(response.message());
+                if (response.isSuccessful() && response.body() != null) {
+                    Boolean result = response.body();
+                    System.out.println("Driver response is" + result.toString());
+
+                } else {
+                    System.out.println("Request for ride failed" + response.message());
+                }
+            }
+
+            @Override
+            public void onFailure(Call<Boolean> call, Throwable t) {
+                t.printStackTrace();
+            }
+        });
+    }
 }
